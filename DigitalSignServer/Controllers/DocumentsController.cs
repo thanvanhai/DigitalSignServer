@@ -94,6 +94,76 @@ public class DocumentsController : ControllerBase
         });
     }
 
+    // === Upload signed PDF (from WPF client) ===
+    [HttpPost("{id:guid}/upload-signed")]
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> UploadSignedPdf(Guid id, IFormFile file)
+    {
+        var userId = GetCurrentUserId();
+
+        var document = await _context.Documents
+            .FirstOrDefaultAsync(d => d.Id == id && d.UploadedByUserId == userId);
+
+        if (document == null)
+            return NotFound(new { message = "Document not found" });
+
+        if (file == null || file.Length == 0)
+            return BadRequest(new { message = "No signed file uploaded" });
+
+        if (!file.ContentType.Equals("application/pdf", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { message = "Only PDF files are allowed" });
+
+        try
+        {
+            var signedPath = _configuration["FileSettings:SignedPath"] ?? "Signed";
+            Directory.CreateDirectory(signedPath);
+
+            var outputFileName = $"hand_signed_{Path.GetFileNameWithoutExtension(document.FileName)}_{DateTime.Now:yyyyMMddHHmmss}.pdf";
+            var outputPath = Path.Combine(signedPath, outputFileName);
+
+            using (var stream = new FileStream(outputPath, FileMode.Create))
+            {
+                await file.CopyToAsync(stream);
+            }
+
+            // ✅ Cập nhật document
+            document.SignedFilePath = outputPath;
+            document.IsSigned = true;
+            document.Status = DocumentStatus.FullySigned;
+            document.SignedAt = DateTime.UtcNow;
+
+            // ✅ Ghi log chữ ký (dạng ký tay)
+            var signature = new Signature
+            {
+                DocumentId = id,
+                SignedByUserId = userId,
+                SignerName = User.FindFirstValue(ClaimTypes.Name) ?? "Unknown User",
+                Reason = "Handwritten Signature from WPF Client",
+                Location = "WPF Client",
+                SignatureData = "HandwrittenSignature",
+                SignedAt = DateTime.UtcNow,
+                IsValid = true
+            };
+
+            _context.Signatures.Add(signature);
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("🖋️ Hand-signed PDF uploaded for document {Id} by user {UserId}", id, userId);
+
+            return Ok(new
+            {
+                message = "Signed PDF uploaded successfully",
+                signedFilePath = outputPath,
+                signedAt = document.SignedAt
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "❌ Error uploading signed PDF for document {Id}", id);
+            return StatusCode(500, new { message = $"Error uploading signed file: {ex.Message}" });
+        }
+    }
+
 
     // === Get all documents ===
     [HttpGet]
