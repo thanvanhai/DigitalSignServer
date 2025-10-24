@@ -1,5 +1,6 @@
 ﻿using DigitalSignServer.Data;
 using DigitalSignServer.Models;
+using DigitalSignServer.Models.Dto;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -13,41 +14,51 @@ public class DocumentTypeController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        var types = await _context.DocumentTypes.Where(dt => dt.IsActive).ToListAsync();
+        var types = await _context.DocumentTypes
+            .Where(dt => dt.IsActive)
+            .Select(dt => new DocumentTypeDto
+            {
+                Id = dt.Id,
+                Name = dt.Name,
+                Description = dt.Description,
+                IsActive = dt.IsActive
+            })
+            .ToListAsync();
+
         return Ok(types);
     }
 
-    [HttpGet("{id}")]
-    public async Task<IActionResult> Get(Guid id)
+    [HttpPost]
+    public async Task<IActionResult> Create(DocumentTypeDto dto)
     {
-        var type = await _context.DocumentTypes.FindAsync(id);
-        if (type == null) return NotFound();
+        var type = new DocumentType
+        {
+            Id = Guid.NewGuid(),
+            Name = dto.Name,
+            Description = dto.Description,
+            IsActive = dto.IsActive
+        };
+
+        _context.DocumentTypes.Add(type);
+        await _context.SaveChangesAsync();
         return Ok(type);
     }
 
-    [HttpPost]
-    public async Task<IActionResult> Create(DocumentType model)
-    {
-        model.Id = Guid.NewGuid();
-        _context.DocumentTypes.Add(model);
-        await _context.SaveChangesAsync();
-        return Ok(model);
-    }
-
     [HttpPut("{id}")]
-    public async Task<IActionResult> Update(Guid id, DocumentType model)
+    public async Task<IActionResult> Update(Guid id, DocumentTypeDto dto)
     {
         var type = await _context.DocumentTypes.FindAsync(id);
         if (type == null) return NotFound();
 
-        type.Name = model.Name;
-        type.Description = model.Description;
-        type.IsActive = model.IsActive;
+        type.Name = dto.Name;
+        type.Description = dto.Description;
+        type.IsActive = dto.IsActive;
         type.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
         return Ok(type);
     }
+
 
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(Guid id)
