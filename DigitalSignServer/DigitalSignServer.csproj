@@ -23,6 +23,7 @@
   <ItemGroup>
     <Folder Include="Certificates\" />
     <Folder Include="Image\" />
+    <Folder Include="Migrations\" />
     <Folder Include="Uploads\" />
     <Folder Include="Signed\" />
   </ItemGroup>
