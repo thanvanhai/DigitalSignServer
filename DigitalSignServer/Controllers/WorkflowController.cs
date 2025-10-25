@@ -27,8 +27,7 @@ namespace DigitalSignServer.Controllers
         {
             var templates = await _context.WorkflowTemplates
                 .Include(t => t.DocumentType)
-                .Include(t => t.Steps)
-                .Include(t => t.Connections) // THÊM
+                .Include(t => t.Steps.OrderBy(s => s.Level))
                 .ToListAsync();
 
             var result = templates.Select(t => new WorkflowTemplateDto
@@ -37,7 +36,10 @@ namespace DigitalSignServer.Controllers
                 Name = t.Name,
                 DocumentTypeId = t.DocumentTypeId,
                 DocumentTypeName = t.DocumentType?.Name,
-                Steps = t.Steps.Select(s => new WorkflowStepDto
+                IsActive = t.IsActive,
+                CreatedAt = t.CreatedAt,
+                UpdatedAt = t.UpdatedAt,
+                Steps = t.Steps.OrderBy(s => s.Level).Select(s => new WorkflowStepDto
                 {
                     Id = s.Id,
                     Level = s.Level,
@@ -47,15 +49,6 @@ namespace DigitalSignServer.Controllers
                     PositionX = s.PositionX,
                     PositionY = s.PositionY,
                     NodeType = s.NodeType
-                }).ToList(),
-                Connections = t.Connections.Select(c => new WorkflowConnectionDto
-                {
-                    Id = c.Id,
-                    SourceStepId = c.SourceStepId,
-                    TargetStepId = c.TargetStepId,
-                    Condition = c.Condition,
-                    Priority = c.Priority,
-                    Label = c.Label
                 }).ToList()
             });
 
@@ -70,8 +63,7 @@ namespace DigitalSignServer.Controllers
         {
             var template = await _context.WorkflowTemplates
                 .Include(t => t.DocumentType)
-                .Include(t => t.Steps)
-                .Include(t => t.Connections)
+                .Include(t => t.Steps.OrderBy(s => s.Level))
                 .FirstOrDefaultAsync(t => t.Id == id);
 
             if (template == null)
@@ -83,7 +75,10 @@ namespace DigitalSignServer.Controllers
                 Name = template.Name,
                 DocumentTypeId = template.DocumentTypeId,
                 DocumentTypeName = template.DocumentType?.Name,
-                Steps = template.Steps.Select(s => new WorkflowStepDto
+                IsActive = template.IsActive,
+                CreatedAt = template.CreatedAt,
+                UpdatedAt = template.UpdatedAt,
+                Steps = template.Steps.OrderBy(s => s.Level).Select(s => new WorkflowStepDto
                 {
                     Id = s.Id,
                     Level = s.Level,
@@ -93,15 +88,6 @@ namespace DigitalSignServer.Controllers
                     PositionX = s.PositionX,
                     PositionY = s.PositionY,
                     NodeType = s.NodeType
-                }).ToList(),
-                Connections = template.Connections.Select(c => new WorkflowConnectionDto
-                {
-                    Id = c.Id,
-                    SourceStepId = c.SourceStepId,
-                    TargetStepId = c.TargetStepId,
-                    Condition = c.Condition,
-                    Priority = c.Priority,
-                    Label = c.Label
                 }).ToList()
             };
 
@@ -122,113 +108,29 @@ namespace DigitalSignServer.Controllers
             if (!docTypeExists)
                 return BadRequest(new { message = "DocumentTypeId không hợp lệ" });
 
-            // Validate connections
-            var stepIds = dto.Steps.Select((s, idx) => idx).ToList(); // Tạm thời dùng index
-            foreach (var conn in dto.Connections)
+            // Validate steps basic
+            var levelSet = new HashSet<int>();
+            foreach (var s in dto.Steps)
             {
-                // Sẽ validate sau khi tạo steps
+                if (levelSet.Contains(s.Level))
+                    return BadRequest(new { message = "Các Level không được trùng nhau trong cùng một template" });
+                levelSet.Add(s.Level);
             }
 
-            using var transaction = await _context.Database.BeginTransactionAsync();
+            using var tx = await _context.Database.BeginTransactionAsync();
             try
             {
-                // Tạo template
                 var template = new WorkflowTemplate
                 {
                     Name = dto.Name,
-                    DocumentTypeId = dto.DocumentTypeId
+                    DocumentTypeId = dto.DocumentTypeId,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow
                 };
 
                 _context.WorkflowTemplates.Add(template);
-                await _context.SaveChangesAsync(); // Lưu để có Id
+                await _context.SaveChangesAsync(); // để có template.Id
 
-                // Tạo steps và map temporary Id
-                var stepIdMap = new Dictionary<int, Guid>(); // index -> real Guid
-                var steps = new List<WorkflowStep>();
-
-                for (int i = 0; i < dto.Steps.Count; i++)
-                {
-                    var stepDto = dto.Steps[i];
-                    var step = new WorkflowStep
-                    {
-                        WorkflowTemplateId = template.Id,
-                        Level = stepDto.Level,
-                        Role = stepDto.Role,
-                        SignatureType = stepDto.SignatureType,
-                        Description = stepDto.Description,
-                        PositionX = stepDto.PositionX,
-                        PositionY = stepDto.PositionY,
-                        NodeType = stepDto.NodeType
-                    };
-                    steps.Add(step);
-                    stepIdMap[i] = step.Id;
-                }
-
-                _context.WorkflowSteps.AddRange(steps);
-                await _context.SaveChangesAsync();
-
-                // Tạo connections
-                var connections = new List<WorkflowConnection>();
-                foreach (var connDto in dto.Connections)
-                {
-                    var connection = new WorkflowConnection
-                    {
-                        WorkflowTemplateId = template.Id,
-                        SourceStepId = connDto.SourceStepId,
-                        TargetStepId = connDto.TargetStepId,
-                        Condition = connDto.Condition,
-                        Priority = connDto.Priority,
-                        Label = connDto.Label
-                    };
-                    connections.Add(connection);
-                }
-
-                _context.WorkflowConnections.AddRange(connections);
-                await _context.SaveChangesAsync();
-
-                await transaction.CommitAsync();
-
-                _logger.LogInformation("✅ Created WorkflowTemplate {Name} with {StepCount} steps and {ConnCount} connections",
-                    template.Name, steps.Count, connections.Count);
-
-                return CreatedAtAction(nameof(Get), new { id = template.Id }, new { id = template.Id });
-            }
-            catch (Exception ex)
-            {
-                await transaction.RollbackAsync();
-                _logger.LogError(ex, "❌ Error creating workflow template");
-                return StatusCode(500, new { message = "Lỗi khi tạo workflow", error = ex.Message });
-            }
-        }
-
-        // ======================
-        // PUT: api/Workflow/{id}
-        // ======================
-        [HttpPut("{id}")]
-        public async Task<IActionResult> Update(Guid id, [FromBody] WorkflowTemplateCreateDto dto)
-        {
-            var template = await _context.WorkflowTemplates
-                .Include(t => t.Steps)
-                .Include(t => t.Connections)
-                .FirstOrDefaultAsync(t => t.Id == id);
-
-            if (template == null)
-                return NotFound(new { message = "Không tìm thấy workflow template" });
-
-            using var transaction = await _context.Database.BeginTransactionAsync();
-            try
-            {
-                // Update template info
-                template.Name = dto.Name;
-                template.DocumentTypeId = dto.DocumentTypeId;
-                template.UpdatedAt = DateTime.UtcNow;
-
-                // Xóa connections và steps cũ
-                _context.WorkflowConnections.RemoveRange(template.Connections);
-                _context.WorkflowSteps.RemoveRange(template.Steps);
-                await _context.SaveChangesAsync();
-
-                // Tạo lại steps
                 var steps = dto.Steps.Select(s => new WorkflowStep
                 {
                     WorkflowTemplateId = template.Id,
@@ -244,29 +146,77 @@ namespace DigitalSignServer.Controllers
                 _context.WorkflowSteps.AddRange(steps);
                 await _context.SaveChangesAsync();
 
-                // Tạo lại connections
-                var connections = dto.Connections.Select(c => new WorkflowConnection
-                {
-                    WorkflowTemplateId = template.Id,
-                    SourceStepId = c.SourceStepId,
-                    TargetStepId = c.TargetStepId,
-                    Condition = c.Condition,
-                    Priority = c.Priority,
-                    Label = c.Label
-                }).ToList();
+                await tx.CommitAsync();
 
-                _context.WorkflowConnections.AddRange(connections);
+                _logger.LogInformation("Created WorkflowTemplate {TemplateId} ({Name}) with {Count} steps", template.Id, template.Name, steps.Count);
+                return CreatedAtAction(nameof(Get), new { id = template.Id }, new { id = template.Id });
+            }
+            catch (Exception ex)
+            {
+                await tx.RollbackAsync();
+                _logger.LogError(ex, "Error creating workflow template");
+                return StatusCode(500, new { message = "Lỗi khi tạo workflow", error = ex.Message });
+            }
+        }
+
+        // ======================
+        // PUT: api/Workflow/{id}
+        // ======================
+        [HttpPut("{id}")]
+        public async Task<IActionResult> Update(Guid id, [FromBody] WorkflowTemplateCreateDto dto)
+        {
+            var template = await _context.WorkflowTemplates
+                .Include(t => t.Steps)
+                .FirstOrDefaultAsync(t => t.Id == id);
+
+            if (template == null)
+                return NotFound(new { message = "Không tìm thấy workflow template" });
+
+            // Validate steps basic
+            var levelSet = new HashSet<int>();
+            foreach (var s in dto.Steps)
+            {
+                if (levelSet.Contains(s.Level))
+                    return BadRequest(new { message = "Các Level không được trùng nhau trong cùng một template" });
+                levelSet.Add(s.Level);
+            }
+
+            using var tx = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                template.Name = dto.Name;
+                template.DocumentTypeId = dto.DocumentTypeId;
+                template.UpdatedAt = DateTime.UtcNow;
+
+                // Remove old steps
+                _context.WorkflowSteps.RemoveRange(template.Steps);
                 await _context.SaveChangesAsync();
 
-                await transaction.CommitAsync();
+                // Add new steps
+                var newSteps = dto.Steps.Select(s => new WorkflowStep
+                {
+                    WorkflowTemplateId = template.Id,
+                    Level = s.Level,
+                    Role = s.Role,
+                    SignatureType = s.SignatureType,
+                    Description = s.Description,
+                    PositionX = s.PositionX,
+                    PositionY = s.PositionY,
+                    NodeType = s.NodeType
+                }).ToList();
 
-                _logger.LogInformation("🔄 Updated WorkflowTemplate {Id}", id);
+                _context.WorkflowSteps.AddRange(newSteps);
+                await _context.SaveChangesAsync();
+
+                await tx.CommitAsync();
+
+                _logger.LogInformation("Updated WorkflowTemplate {TemplateId}", id);
                 return NoContent();
             }
             catch (Exception ex)
             {
-                await transaction.RollbackAsync();
-                _logger.LogError(ex, "❌ Error updating workflow template");
+                await tx.RollbackAsync();
+                _logger.LogError(ex, "Error updating workflow template");
                 return StatusCode(500, new { message = "Lỗi khi cập nhật workflow", error = ex.Message });
             }
         }
@@ -279,125 +229,71 @@ namespace DigitalSignServer.Controllers
         {
             var template = await _context.WorkflowTemplates
                 .Include(t => t.Steps)
-                .Include(t => t.Connections)
                 .FirstOrDefaultAsync(t => t.Id == id);
 
             if (template == null)
                 return NotFound(new { message = "Không tìm thấy workflow template" });
 
-            _context.WorkflowConnections.RemoveRange(template.Connections);
             _context.WorkflowSteps.RemoveRange(template.Steps);
             _context.WorkflowTemplates.Remove(template);
 
             await _context.SaveChangesAsync();
 
-            _logger.LogInformation("🗑️ Deleted WorkflowTemplate {Id}", id);
+            _logger.LogInformation("Deleted WorkflowTemplate {TemplateId}", id);
             return NoContent();
         }
 
         // ======================
         // GET: api/Workflow/{id}/validate
-        // Kiểm tra workflow có hợp lệ không
+        // Kiểm tra workflow hợp lệ cho mô hình tuần tự
         // ======================
         [HttpGet("{id}/validate")]
         public async Task<IActionResult> ValidateWorkflow(Guid id)
         {
             var template = await _context.WorkflowTemplates
                 .Include(t => t.Steps)
-                .Include(t => t.Connections)
                 .FirstOrDefaultAsync(t => t.Id == id);
 
             if (template == null)
                 return NotFound(new { message = "Không tìm thấy workflow template" });
 
             var errors = new List<string>();
+            var steps = template.Steps.OrderBy(s => s.Level).ToList();
 
-            // 1. Kiểm tra có ít nhất 1 step
-            if (!template.Steps.Any())
-                errors.Add("Workflow phải có ít nhất 1 bước");
+            if (!steps.Any())
+                errors.Add("Workflow phải có ít nhất 1 bước.");
 
-            // 2. Kiểm tra có node start
-            if (!template.Steps.Any(s => s.NodeType == "start"))
-                errors.Add("Workflow phải có 1 node Start");
+            // Kiểm tra tồn tại 1 node start và 1 node end (nếu UI vẫn dùng start/end)
+            if (!steps.Any(s => string.Equals(s.NodeType, "start", StringComparison.OrdinalIgnoreCase)))
+                errors.Add("Workflow nên có 1 node 'start' (nếu dùng loại node này).");
 
-            // 3. Kiểm tra có node end
-            if (!template.Steps.Any(s => s.NodeType == "end"))
-                errors.Add("Workflow phải có 1 node End");
+            if (!steps.Any(s => string.Equals(s.NodeType, "end", StringComparison.OrdinalIgnoreCase)))
+                errors.Add("Workflow nên có 1 node 'end' (nếu dùng loại node này).");
 
-            // 4. Kiểm tra tất cả nodes (trừ end) phải có outgoing connection
-            var nodesWithoutOutgoing = template.Steps
-                .Where(s => s.NodeType != "end" && !template.Connections.Any(c => c.SourceStepId == s.Id))
-                .Select(s => s.Role)
-                .ToList();
+            // Kiểm tra Level không trùng và liên tục (1..n) - nếu cậu muốn bắt buộc
+            var levels = steps.Select(s => s.Level).ToList();
+            if (levels.Distinct().Count() != levels.Count)
+                errors.Add("Các Level không được trùng nhau.");
 
-            if (nodesWithoutOutgoing.Any())
-                errors.Add($"Các node sau chưa có connection đi ra: {string.Join(", ", nodesWithoutOutgoing)}");
-
-            // 5. Kiểm tra tất cả nodes (trừ start) phải có incoming connection
-            var nodesWithoutIncoming = template.Steps
-                .Where(s => s.NodeType != "start" && !template.Connections.Any(c => c.TargetStepId == s.Id))
-                .Select(s => s.Role)
-                .ToList();
-
-            if (nodesWithoutIncoming.Any())
-                errors.Add($"Các node sau chưa có connection đi vào: {string.Join(", ", nodesWithoutIncoming)}");
-
-            // 6. Kiểm tra chu trình (cycle detection) - dùng DFS
-            if (HasCycle(template.Steps.ToList(), template.Connections.ToList()))
-                errors.Add("Workflow có chu trình (cycle), cần loại bỏ");
+            var min = levels.MinOrDefault();
+            var max = levels.MaxOrDefault();
+            // nếu muốn bắt buộc Level bắt đầu từ 1 và liên tục đến max:
+            if (levels.Any() && !(min == 1 && levels.Count == (max - min + 1)))
+                errors.Add("Level nên bắt đầu từ 1 và liên tục (1..n) để quy trình tuần tự rõ ràng.");
 
             if (errors.Any())
-            {
-                return BadRequest(new
-                {
-                    isValid = false,
-                    errors = errors
-                });
-            }
+                return BadRequest(new { isValid = false, errors });
 
-            return Ok(new
-            {
-                isValid = true,
-                message = "Workflow hợp lệ"
-            });
+            return Ok(new { isValid = true, message = "Workflow hợp lệ cho mô hình tuần tự" });
         }
+    }
 
-        // Helper: Kiểm tra chu trình
-        private bool HasCycle(List<WorkflowStep> steps, List<WorkflowConnection> connections)
-        {
-            var visited = new HashSet<Guid>();
-            var recursionStack = new HashSet<Guid>();
-
-            foreach (var step in steps)
-            {
-                if (HasCycleDFS(step.Id, visited, recursionStack, connections))
-                    return true;
-            }
-
-            return false;
-        }
-
-        private bool HasCycleDFS(Guid nodeId, HashSet<Guid> visited, HashSet<Guid> recursionStack, List<WorkflowConnection> connections)
-        {
-            visited.Add(nodeId);
-            recursionStack.Add(nodeId);
-
-            var outgoing = connections.Where(c => c.SourceStepId == nodeId);
-            foreach (var conn in outgoing)
-            {
-                if (!visited.Contains(conn.TargetStepId))
-                {
-                    if (HasCycleDFS(conn.TargetStepId, visited, recursionStack, connections))
-                        return true;
-                }
-                else if (recursionStack.Contains(conn.TargetStepId))
-                {
-                    return true; // Phát hiện cycle
-                }
-            }
-
-            recursionStack.Remove(nodeId);
-            return false;
-        }
+    // helper extension (nếu .NET version không có MinOrDefault/MaxOrDefault)
+    internal static class EnumerableExtensions
+    {
+        public static int MinOrDefault(this IEnumerable<int> source) =>
+            source?.Any() == true ? source.Min() : 0;
+        public static int MaxOrDefault(this IEnumerable<int> source) =>
+            source?.Any() == true ? source.Max() : 0;
     }
 }

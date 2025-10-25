@@ -7,18 +7,22 @@ namespace DigitalSignServer.Data
     {
         public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
+        // =========================
+        // DbSet
+        // =========================
         public DbSet<User> Users => Set<User>();
         public DbSet<Document> Documents => Set<Document>();
         public DbSet<Signature> Signatures => Set<Signature>();
 
-        // --- Workflow System ---
         public DbSet<DocumentType> DocumentTypes => Set<DocumentType>();
         public DbSet<WorkflowTemplate> WorkflowTemplates => Set<WorkflowTemplate>();
         public DbSet<WorkflowStep> WorkflowSteps => Set<WorkflowStep>();
-        public DbSet<WorkflowConnection> WorkflowConnections => Set<WorkflowConnection>(); // ✅ MỚI THÊM
         public DbSet<DocumentWorkflow> DocumentWorkflows => Set<DocumentWorkflow>();
         public DbSet<ApprovalHistory> ApprovalHistories => Set<ApprovalHistory>();
 
+        // =========================
+        // Model Configuration
+        // =========================
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -49,7 +53,8 @@ namespace DigitalSignServer.Data
 
                 entity.HasOne(d => d.Workflow)
                     .WithOne(w => w.Document)
-                    .HasForeignKey<DocumentWorkflow>(w => w.DocumentId);
+                    .HasForeignKey<DocumentWorkflow>(w => w.DocumentId)
+                    .OnDelete(DeleteBehavior.Cascade);
 
                 entity.HasIndex(e => e.Hash);
             });
@@ -86,16 +91,15 @@ namespace DigitalSignServer.Data
             // ============================================
             modelBuilder.Entity<WorkflowTemplate>(entity =>
             {
+                entity.Property(t => t.Name).IsRequired().HasMaxLength(200);
+                entity.Property(t => t.IsActive).HasDefaultValue(true);
+
                 entity.HasMany(wt => wt.Steps)
                     .WithOne(s => s.WorkflowTemplate)
                     .HasForeignKey(s => s.WorkflowTemplateId)
                     .OnDelete(DeleteBehavior.Cascade);
 
-                // ✅ MỚI: Relationship với WorkflowConnections
-                entity.HasMany(wt => wt.Connections)
-                    .WithOne(c => c.WorkflowTemplate)
-                    .HasForeignKey(c => c.WorkflowTemplateId)
-                    .OnDelete(DeleteBehavior.Cascade);
+                entity.HasIndex(t => t.DocumentTypeId);
             });
 
             // ============================================
@@ -109,58 +113,8 @@ namespace DigitalSignServer.Data
                 entity.Property(s => s.NodeType).HasMaxLength(50);
                 entity.Property(s => s.Description).HasMaxLength(500);
 
-                // ✅ MỚI: Indexes cho performance
                 entity.HasIndex(s => s.WorkflowTemplateId);
-                entity.HasIndex(s => s.Level);
-            });
-
-            // ============================================
-            // ✅ WORKFLOW CONNECTION CONFIGURATION (MỚI)
-            // ============================================
-            modelBuilder.Entity<WorkflowConnection>(entity =>
-            {
-                // Primary Key
-                entity.HasKey(c => c.Id);
-
-                // Relationship: WorkflowConnection -> WorkflowTemplate
-                entity.HasOne(c => c.WorkflowTemplate)
-                    .WithMany(t => t.Connections)
-                    .HasForeignKey(c => c.WorkflowTemplateId)
-                    .OnDelete(DeleteBehavior.Cascade);
-
-                // Relationship: WorkflowConnection -> SourceStep
-                entity.HasOne(c => c.SourceStep)
-                    .WithMany(s => s.OutgoingConnections)
-                    .HasForeignKey(c => c.SourceStepId)
-                    .OnDelete(DeleteBehavior.Restrict); // ⚠️ QUAN TRỌNG: Restrict để tránh cascade conflict
-
-                // Relationship: WorkflowConnection -> TargetStep
-                entity.HasOne(c => c.TargetStep)
-                    .WithMany(s => s.IncomingConnections)
-                    .HasForeignKey(c => c.TargetStepId)
-                    .OnDelete(DeleteBehavior.Restrict); // ⚠️ QUAN TRỌNG: Restrict
-
-                // Properties
-                entity.Property(c => c.Condition).HasMaxLength(50);
-                entity.Property(c => c.Label).HasMaxLength(200);
-                entity.Property(c => c.Priority).HasDefaultValue(0);
-
-                // Indexes cho performance
-                entity.HasIndex(c => new { c.SourceStepId, c.TargetStepId })
-                    .HasDatabaseName("IX_WorkflowConnection_SourceTarget");
-
-                entity.HasIndex(c => c.WorkflowTemplateId)
-                    .HasDatabaseName("IX_WorkflowConnection_Template");
-
-                entity.HasIndex(c => c.SourceStepId)
-                    .HasDatabaseName("IX_WorkflowConnection_Source");
-
-                entity.HasIndex(c => c.TargetStepId)
-                    .HasDatabaseName("IX_WorkflowConnection_Target");
-
-                // ✅ Constraint: Không cho phép kết nối node với chính nó
-                entity.HasCheckConstraint("CK_WorkflowConnection_NoSelfLoop",
-                    "[SourceStepId] <> [TargetStepId]");
+                entity.HasIndex(s => new { s.WorkflowTemplateId, s.Level }).IsUnique();
             });
 
             // ============================================
@@ -173,13 +127,18 @@ namespace DigitalSignServer.Data
                     .HasForeignKey(dw => dw.WorkflowTemplateId)
                     .OnDelete(DeleteBehavior.Restrict);
 
+                entity.HasOne(dw => dw.CurrentStep)
+                    .WithMany()
+                    .HasForeignKey(dw => dw.CurrentStepId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
                 entity.HasMany(dw => dw.ApprovalHistories)
                     .WithOne(ah => ah.DocumentWorkflow)
                     .HasForeignKey(ah => ah.DocumentWorkflowId)
                     .OnDelete(DeleteBehavior.Cascade);
 
-                // ✅ Index cho CurrentStepId (để query nhanh)
                 entity.HasIndex(dw => dw.CurrentStepId);
+                entity.HasIndex(dw => dw.WorkflowTemplateId);
             });
 
             // ============================================
@@ -202,7 +161,6 @@ namespace DigitalSignServer.Data
                     .HasForeignKey(ah => ah.DocumentWorkflowId)
                     .OnDelete(DeleteBehavior.Cascade);
 
-                // ✅ Indexes
                 entity.HasIndex(ah => ah.DocumentWorkflowId);
                 entity.HasIndex(ah => ah.WorkflowStepId);
                 entity.HasIndex(ah => ah.SignedByUserId);

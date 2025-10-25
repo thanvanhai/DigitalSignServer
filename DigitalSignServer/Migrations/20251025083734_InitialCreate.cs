@@ -55,7 +55,7 @@ namespace DigitalSignServer.Migrations
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
                     DocumentTypeId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    IsActive = table.Column<bool>(type: "bit", nullable: false),
+                    IsActive = table.Column<bool>(type: "bit", nullable: false, defaultValue: true),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true)
                 },
@@ -116,11 +116,11 @@ namespace DigitalSignServer.Migrations
                     Level = table.Column<int>(type: "int", nullable: false),
                     Role = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
                     SignatureType = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    Description = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
                     IsActive = table.Column<bool>(type: "bit", nullable: false),
                     PositionX = table.Column<double>(type: "float", nullable: false),
                     PositionY = table.Column<double>(type: "float", nullable: false),
-                    NodeType = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
-                    Description = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true)
+                    NodeType = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true)
                 },
                 constraints: table =>
                 {
@@ -198,50 +198,14 @@ namespace DigitalSignServer.Migrations
                         name: "FK_DocumentWorkflows_WorkflowSteps_CurrentStepId",
                         column: x => x.CurrentStepId,
                         principalTable: "WorkflowSteps",
-                        principalColumn: "Id");
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
                         name: "FK_DocumentWorkflows_WorkflowTemplates_WorkflowTemplateId",
                         column: x => x.WorkflowTemplateId,
                         principalTable: "WorkflowTemplates",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "WorkflowConnections",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    WorkflowTemplateId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    SourceStepId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    TargetStepId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Condition = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
-                    Priority = table.Column<int>(type: "int", nullable: false, defaultValue: 0),
-                    Label = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: true),
-                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_WorkflowConnections", x => x.Id);
-                    table.CheckConstraint("CK_WorkflowConnection_NoSelfLoop", "[SourceStepId] <> [TargetStepId]");
-                    table.ForeignKey(
-                        name: "FK_WorkflowConnections_WorkflowSteps_SourceStepId",
-                        column: x => x.SourceStepId,
-                        principalTable: "WorkflowSteps",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_WorkflowConnections_WorkflowSteps_TargetStepId",
-                        column: x => x.TargetStepId,
-                        principalTable: "WorkflowSteps",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_WorkflowConnections_WorkflowTemplates_WorkflowTemplateId",
-                        column: x => x.WorkflowTemplateId,
-                        principalTable: "WorkflowTemplates",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
@@ -358,34 +322,15 @@ namespace DigitalSignServer.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_WorkflowConnection_Source",
-                table: "WorkflowConnections",
-                column: "SourceStepId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_WorkflowConnection_SourceTarget",
-                table: "WorkflowConnections",
-                columns: new[] { "SourceStepId", "TargetStepId" });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_WorkflowConnection_Target",
-                table: "WorkflowConnections",
-                column: "TargetStepId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_WorkflowConnection_Template",
-                table: "WorkflowConnections",
-                column: "WorkflowTemplateId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_WorkflowSteps_Level",
-                table: "WorkflowSteps",
-                column: "Level");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_WorkflowSteps_WorkflowTemplateId",
                 table: "WorkflowSteps",
                 column: "WorkflowTemplateId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_WorkflowSteps_WorkflowTemplateId_Level",
+                table: "WorkflowSteps",
+                columns: new[] { "WorkflowTemplateId", "Level" },
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_WorkflowTemplates_DocumentTypeId",
@@ -401,9 +346,6 @@ namespace DigitalSignServer.Migrations
 
             migrationBuilder.DropTable(
                 name: "Signatures");
-
-            migrationBuilder.DropTable(
-                name: "WorkflowConnections");
 
             migrationBuilder.DropTable(
                 name: "DocumentWorkflows");

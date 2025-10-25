@@ -311,57 +311,6 @@ namespace DigitalSignServer.Migrations
                     b.ToTable("Users");
                 });
 
-            modelBuilder.Entity("DigitalSignServer.Models.WorkflowConnection", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Condition")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Label")
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<int>("Priority")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int")
-                        .HasDefaultValue(0);
-
-                    b.Property<Guid>("SourceStepId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("TargetStepId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("WorkflowTemplateId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SourceStepId")
-                        .HasDatabaseName("IX_WorkflowConnection_Source");
-
-                    b.HasIndex("TargetStepId")
-                        .HasDatabaseName("IX_WorkflowConnection_Target");
-
-                    b.HasIndex("WorkflowTemplateId")
-                        .HasDatabaseName("IX_WorkflowConnection_Template");
-
-                    b.HasIndex("SourceStepId", "TargetStepId")
-                        .HasDatabaseName("IX_WorkflowConnection_SourceTarget");
-
-                    b.ToTable("WorkflowConnections", t =>
-                        {
-                            t.HasCheckConstraint("CK_WorkflowConnection_NoSelfLoop", "[SourceStepId] <> [TargetStepId]");
-                        });
-                });
-
             modelBuilder.Entity("DigitalSignServer.Models.WorkflowStep", b =>
                 {
                     b.Property<Guid>("Id")
@@ -403,9 +352,10 @@ namespace DigitalSignServer.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Level");
-
                     b.HasIndex("WorkflowTemplateId");
+
+                    b.HasIndex("WorkflowTemplateId", "Level")
+                        .IsUnique();
 
                     b.ToTable("WorkflowSteps");
                 });
@@ -423,7 +373,9 @@ namespace DigitalSignServer.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -490,7 +442,8 @@ namespace DigitalSignServer.Migrations
                 {
                     b.HasOne("DigitalSignServer.Models.WorkflowStep", "CurrentStep")
                         .WithMany()
-                        .HasForeignKey("CurrentStepId");
+                        .HasForeignKey("CurrentStepId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("DigitalSignServer.Models.Document", "Document")
                         .WithOne("Workflow")
@@ -534,33 +487,6 @@ namespace DigitalSignServer.Migrations
                     b.Navigation("Document");
 
                     b.Navigation("SignedByUser");
-                });
-
-            modelBuilder.Entity("DigitalSignServer.Models.WorkflowConnection", b =>
-                {
-                    b.HasOne("DigitalSignServer.Models.WorkflowStep", "SourceStep")
-                        .WithMany("OutgoingConnections")
-                        .HasForeignKey("SourceStepId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("DigitalSignServer.Models.WorkflowStep", "TargetStep")
-                        .WithMany("IncomingConnections")
-                        .HasForeignKey("TargetStepId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("DigitalSignServer.Models.WorkflowTemplate", "WorkflowTemplate")
-                        .WithMany("Connections")
-                        .HasForeignKey("WorkflowTemplateId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("SourceStep");
-
-                    b.Navigation("TargetStep");
-
-                    b.Navigation("WorkflowTemplate");
                 });
 
             modelBuilder.Entity("DigitalSignServer.Models.WorkflowStep", b =>
@@ -611,17 +537,8 @@ namespace DigitalSignServer.Migrations
                     b.Navigation("Signatures");
                 });
 
-            modelBuilder.Entity("DigitalSignServer.Models.WorkflowStep", b =>
-                {
-                    b.Navigation("IncomingConnections");
-
-                    b.Navigation("OutgoingConnections");
-                });
-
             modelBuilder.Entity("DigitalSignServer.Models.WorkflowTemplate", b =>
                 {
-                    b.Navigation("Connections");
-
                     b.Navigation("Steps");
                 });
 #pragma warning restore 612, 618
