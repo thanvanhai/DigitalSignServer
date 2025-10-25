@@ -1,33 +1,51 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace DigitalSignServer.Models
 {
-    /// <summary>
-    /// Một tài liệu thực tế đang được ký
-    /// </summary>
     public class DocumentWorkflow
     {
         [Key]
         public Guid Id { get; set; } = Guid.NewGuid();
 
+        // ---------------------------------
+        // Liên kết tới tài liệu (Document)
+        // ---------------------------------
         [Required]
         public Guid DocumentId { get; set; }
         public Document Document { get; set; }
 
+        // ---------------------------------
+        // Liên kết tới template quy trình (WorkflowTemplate)
+        // ---------------------------------
         [Required]
         public Guid WorkflowTemplateId { get; set; }
         public WorkflowTemplate WorkflowTemplate { get; set; }
 
-        public int CurrentLevel { get; set; } = 1; // Level đang chờ ký
+        // ---------------------------------
+        // Bước hiện tại trong quy trình
+        // ---------------------------------
+        public Guid? CurrentStepId { get; set; }
+        public WorkflowStep? CurrentStep { get; set; }
 
+        // ---------------------------------
+        // Nhật ký phê duyệt (ApprovalHistory)
+        // ---------------------------------
+        public ICollection<ApprovalHistory> ApprovalHistories { get; set; } = new List<ApprovalHistory>();
+
+        // ---------------------------------
+        // Trạng thái & thời gian
+        // ---------------------------------
         [MaxLength(50)]
-        public string Status { get; set; } = "Chờ ký"; // "Chờ ký", "Đã ký đầy đủ", "Từ chối"
+        public string Status { get; set; } = "Pending"; // Pending, InProgress, Completed, Rejected, etc.
 
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime StartedAt { get; set; } = DateTime.UtcNow;
+        public DateTime? CompletedAt { get; set; }
 
-        public DateTime? UpdatedAt { get; set; }
-
-        // Navigation
-        public virtual ICollection<ApprovalHistory> ApprovalHistories { get; set; }
+        // ---------------------------------
+        // Người khởi tạo
+        // ---------------------------------
+        public Guid? InitiatedByUserId { get; set; }
+        public User? InitiatedBy { get; set; }
     }
 }

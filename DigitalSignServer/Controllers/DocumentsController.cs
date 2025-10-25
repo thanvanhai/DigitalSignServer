@@ -43,6 +43,7 @@ public class DocumentsController : ControllerBase
     {
         var file = request.File;
         var description = request.Description;
+        var documentTypeId = request.DocumentTypeId;
 
         if (file == null || file.Length == 0)
             return BadRequest(new { message = "No file uploaded" });
@@ -77,7 +78,8 @@ public class DocumentsController : ControllerBase
             UploadedAt = DateTime.UtcNow,
             Description = description,
             Status = DocumentStatus.Uploaded,
-            IsSigned = false
+            IsSigned = false,
+            DocumentTypeId = documentTypeId
         };
 
         _context.Documents.Add(document);
@@ -90,9 +92,12 @@ public class DocumentsController : ControllerBase
             id = document.Id,
             fileName = document.FileName,
             fileSize = document.FileSize,
-            uploadedAt = document.UploadedAt
+            uploadedAt = document.UploadedAt,
+            description = document.Description,
+            documentTypeId = document.DocumentTypeId
         });
     }
+
 
     // === Upload signed PDF (from WPF client) ===
     [HttpPost("{id:guid}/upload-signed")]
@@ -187,7 +192,12 @@ public class DocumentsController : ControllerBase
                 d.SignedAt,
                 d.Description,
                 SignatureCount = d.Signatures.Count,
-                UploadedByUsername = d.UploadedBy.Username
+                UploadedByUsername = d.UploadedBy.Username,
+                DocumentType = d.DocumentType == null ? null : new DocumentTypeDto
+                {
+                    Id = d.DocumentType.Id,
+                    Name = d.DocumentType.Name
+                }
             })
             .ToListAsync();
 
@@ -218,6 +228,7 @@ public class DocumentsController : ControllerBase
             document.UploadedAt,
             document.SignedAt,
             document.Description,
+            document.DocumentTypeId,
 
             Signatures = document.Signatures.Select(s => new
             {

@@ -8,6 +8,8 @@ namespace DigitalSignServer.Models.Dto
         public IFormFile File { get; set; } = null!;
 
         public string? Description { get; set; }
+        [Required]
+        public Guid DocumentTypeId { get; set; }
     }
 
     public class DocumentResponse
@@ -23,5 +25,7 @@ namespace DigitalSignServer.Models.Dto
         public string? Description { get; set; }
         public int SignatureCount { get; set; }
         public string UploadedByUsername { get; set; } = string.Empty;
+        // Thêm loại tài liệu
+        public DocumentTypeDto? DocumentType { get; set; }
     }
 }

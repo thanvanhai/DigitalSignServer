@@ -33,7 +33,6 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 // Add services to the container.
 // Register Services
 builder.Services.AddScoped<IPdfSignerService, PdfSignerService>();
-builder.Services.AddScoped<WorkflowService>();
 
 // CẤU HÌNH CONTROLLERS VỚI JSON OPTIONS - SỬA ĐOẠN NÀY
 builder.Services.AddControllers()

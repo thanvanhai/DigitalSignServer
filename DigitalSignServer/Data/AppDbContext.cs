@@ -11,10 +11,11 @@ namespace DigitalSignServer.Data
         public DbSet<Document> Documents => Set<Document>();
         public DbSet<Signature> Signatures => Set<Signature>();
 
-        // --- Bổ sung workflow ---
+        // --- Workflow System ---
         public DbSet<DocumentType> DocumentTypes => Set<DocumentType>();
         public DbSet<WorkflowTemplate> WorkflowTemplates => Set<WorkflowTemplate>();
         public DbSet<WorkflowStep> WorkflowSteps => Set<WorkflowStep>();
+        public DbSet<WorkflowConnection> WorkflowConnections => Set<WorkflowConnection>(); // ✅ MỚI THÊM
         public DbSet<DocumentWorkflow> DocumentWorkflows => Set<DocumentWorkflow>();
         public DbSet<ApprovalHistory> ApprovalHistories => Set<ApprovalHistory>();
 
@@ -22,14 +23,18 @@ namespace DigitalSignServer.Data
         {
             base.OnModelCreating(modelBuilder);
 
-            // User configuration
+            // ============================================
+            // USER CONFIGURATION
+            // ============================================
             modelBuilder.Entity<User>(entity =>
             {
                 entity.HasIndex(e => e.Username).IsUnique();
                 entity.HasIndex(e => e.Email).IsUnique();
             });
 
-            // Document configuration
+            // ============================================
+            // DOCUMENT CONFIGURATION
+            // ============================================
             modelBuilder.Entity<Document>(entity =>
             {
                 entity.HasOne(d => d.UploadedBy)
@@ -49,7 +54,9 @@ namespace DigitalSignServer.Data
                 entity.HasIndex(e => e.Hash);
             });
 
-            // Signature configuration
+            // ============================================
+            // SIGNATURE CONFIGURATION
+            // ============================================
             modelBuilder.Entity<Signature>(entity =>
             {
                 entity.HasOne(s => s.Document)
@@ -63,51 +70,127 @@ namespace DigitalSignServer.Data
                     .OnDelete(DeleteBehavior.Restrict);
             });
 
-            // DocumentType configuration
+            // ============================================
+            // DOCUMENT TYPE CONFIGURATION
+            // ============================================
             modelBuilder.Entity<DocumentType>(entity =>
             {
                 entity.HasMany(dt => dt.WorkflowTemplates)
                     .WithOne(wt => wt.DocumentType)
-                    .HasForeignKey(wt => wt.DocumentTypeId);
-
-                entity.HasMany(dt => dt.Documents)
-                    .WithOne(d => d.DocumentType)
-                    .HasForeignKey(d => d.DocumentTypeId);
+                    .HasForeignKey(wt => wt.DocumentTypeId)
+                    .OnDelete(DeleteBehavior.Restrict);
             });
 
-            // WorkflowTemplate configuration
+            // ============================================
+            // WORKFLOW TEMPLATE CONFIGURATION
+            // ============================================
             modelBuilder.Entity<WorkflowTemplate>(entity =>
             {
                 entity.HasMany(wt => wt.Steps)
                     .WithOne(s => s.WorkflowTemplate)
-                    .HasForeignKey(s => s.WorkflowTemplateId);
+                    .HasForeignKey(s => s.WorkflowTemplateId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                // ✅ MỚI: Relationship với WorkflowConnections
+                entity.HasMany(wt => wt.Connections)
+                    .WithOne(c => c.WorkflowTemplate)
+                    .HasForeignKey(c => c.WorkflowTemplateId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
-            // WorkflowStep configuration
+            // ============================================
+            // WORKFLOW STEP CONFIGURATION
+            // ============================================
             modelBuilder.Entity<WorkflowStep>(entity =>
             {
                 entity.Property(s => s.Level).IsRequired();
+                entity.Property(s => s.Role).IsRequired().HasMaxLength(100);
+                entity.Property(s => s.SignatureType).IsRequired().HasMaxLength(50);
+                entity.Property(s => s.NodeType).HasMaxLength(50);
+                entity.Property(s => s.Description).HasMaxLength(500);
+
+                // ✅ MỚI: Indexes cho performance
+                entity.HasIndex(s => s.WorkflowTemplateId);
+                entity.HasIndex(s => s.Level);
             });
 
-            // DocumentWorkflow configuration
+            // ============================================
+            // ✅ WORKFLOW CONNECTION CONFIGURATION (MỚI)
+            // ============================================
+            modelBuilder.Entity<WorkflowConnection>(entity =>
+            {
+                // Primary Key
+                entity.HasKey(c => c.Id);
+
+                // Relationship: WorkflowConnection -> WorkflowTemplate
+                entity.HasOne(c => c.WorkflowTemplate)
+                    .WithMany(t => t.Connections)
+                    .HasForeignKey(c => c.WorkflowTemplateId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                // Relationship: WorkflowConnection -> SourceStep
+                entity.HasOne(c => c.SourceStep)
+                    .WithMany(s => s.OutgoingConnections)
+                    .HasForeignKey(c => c.SourceStepId)
+                    .OnDelete(DeleteBehavior.Restrict); // ⚠️ QUAN TRỌNG: Restrict để tránh cascade conflict
+
+                // Relationship: WorkflowConnection -> TargetStep
+                entity.HasOne(c => c.TargetStep)
+                    .WithMany(s => s.IncomingConnections)
+                    .HasForeignKey(c => c.TargetStepId)
+                    .OnDelete(DeleteBehavior.Restrict); // ⚠️ QUAN TRỌNG: Restrict
+
+                // Properties
+                entity.Property(c => c.Condition).HasMaxLength(50);
+                entity.Property(c => c.Label).HasMaxLength(200);
+                entity.Property(c => c.Priority).HasDefaultValue(0);
+
+                // Indexes cho performance
+                entity.HasIndex(c => new { c.SourceStepId, c.TargetStepId })
+                    .HasDatabaseName("IX_WorkflowConnection_SourceTarget");
+
+                entity.HasIndex(c => c.WorkflowTemplateId)
+                    .HasDatabaseName("IX_WorkflowConnection_Template");
+
+                entity.HasIndex(c => c.SourceStepId)
+                    .HasDatabaseName("IX_WorkflowConnection_Source");
+
+                entity.HasIndex(c => c.TargetStepId)
+                    .HasDatabaseName("IX_WorkflowConnection_Target");
+
+                // ✅ Constraint: Không cho phép kết nối node với chính nó
+                entity.HasCheckConstraint("CK_WorkflowConnection_NoSelfLoop",
+                    "[SourceStepId] <> [TargetStepId]");
+            });
+
+            // ============================================
+            // DOCUMENT WORKFLOW CONFIGURATION
+            // ============================================
             modelBuilder.Entity<DocumentWorkflow>(entity =>
             {
                 entity.HasOne(dw => dw.WorkflowTemplate)
                     .WithMany()
-                    .HasForeignKey(dw => dw.WorkflowTemplateId);
+                    .HasForeignKey(dw => dw.WorkflowTemplateId)
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasMany(dw => dw.ApprovalHistories)
                     .WithOne(ah => ah.DocumentWorkflow)
-                    .HasForeignKey(ah => ah.DocumentWorkflowId);
+                    .HasForeignKey(ah => ah.DocumentWorkflowId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                // ✅ Index cho CurrentStepId (để query nhanh)
+                entity.HasIndex(dw => dw.CurrentStepId);
             });
 
-            // ApprovalHistory configuration
+            // ============================================
+            // APPROVAL HISTORY CONFIGURATION
+            // ============================================
             modelBuilder.Entity<ApprovalHistory>(entity =>
             {
                 entity.HasOne(ah => ah.WorkflowStep)
                     .WithMany()
                     .HasForeignKey(ah => ah.WorkflowStepId)
-                    .OnDelete(DeleteBehavior.Restrict); // bỏ cascade
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(ah => ah.SignedBy)
                     .WithMany()
@@ -117,7 +200,13 @@ namespace DigitalSignServer.Data
                 entity.HasOne(ah => ah.DocumentWorkflow)
                     .WithMany(dw => dw.ApprovalHistories)
                     .HasForeignKey(ah => ah.DocumentWorkflowId)
-                    .OnDelete(DeleteBehavior.Cascade); // giữ cascade cho DocumentWorkflow
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                // ✅ Indexes
+                entity.HasIndex(ah => ah.DocumentWorkflowId);
+                entity.HasIndex(ah => ah.WorkflowStepId);
+                entity.HasIndex(ah => ah.SignedByUserId);
+                entity.HasIndex(ah => ah.SignedAt);
             });
         }
     }
