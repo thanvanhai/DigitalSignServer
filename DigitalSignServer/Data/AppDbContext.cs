@@ -13,10 +13,10 @@ namespace DigitalSignServer.Data
         public DbSet<User> Users => Set<User>();
         public DbSet<Document> Documents => Set<Document>();
         public DbSet<Signature> Signatures => Set<Signature>();
-
         public DbSet<DocumentType> DocumentTypes => Set<DocumentType>();
         public DbSet<WorkflowTemplate> WorkflowTemplates => Set<WorkflowTemplate>();
         public DbSet<WorkflowStep> WorkflowSteps => Set<WorkflowStep>();
+        public DbSet<WorkflowConnection> WorkflowConnections => Set<WorkflowConnection>(); // ✅ mới
         public DbSet<DocumentWorkflow> DocumentWorkflows => Set<DocumentWorkflow>();
         public DbSet<ApprovalHistory> ApprovalHistories => Set<ApprovalHistory>();
 
@@ -99,6 +99,12 @@ namespace DigitalSignServer.Data
                     .HasForeignKey(s => s.WorkflowTemplateId)
                     .OnDelete(DeleteBehavior.Cascade);
 
+                // ✅ Thêm liên kết đến Connections
+                entity.HasMany(wt => wt.Connections)
+                    .WithOne(c => c.WorkflowTemplate)
+                    .HasForeignKey(c => c.WorkflowTemplateId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
                 entity.HasIndex(t => t.DocumentTypeId);
             });
 
@@ -115,6 +121,30 @@ namespace DigitalSignServer.Data
 
                 entity.HasIndex(s => s.WorkflowTemplateId);
                 entity.HasIndex(s => new { s.WorkflowTemplateId, s.Level }).IsUnique();
+            });
+
+            // ============================================
+            // WORKFLOW CONNECTION CONFIGURATION ✅ MỚI
+            // ============================================
+            modelBuilder.Entity<WorkflowConnection>(entity =>
+            {
+                entity.HasOne(c => c.WorkflowTemplate)
+                    .WithMany(wt => wt.Connections)
+                    .HasForeignKey(c => c.WorkflowTemplateId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(c => c.SourceStep)
+                    .WithMany()
+                    .HasForeignKey(c => c.SourceStepId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(c => c.TargetStep)
+                    .WithMany()
+                    .HasForeignKey(c => c.TargetStepId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.Property(c => c.Condition).HasMaxLength(100);
+                entity.HasIndex(c => c.WorkflowTemplateId);
             });
 
             // ============================================

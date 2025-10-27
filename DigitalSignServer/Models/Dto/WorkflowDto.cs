@@ -46,6 +46,7 @@
         public DateTime? UpdatedAt { get; set; }
 
         public List<WorkflowStepDto> Steps { get; set; } = new();
+        public List<WorkflowConnectionDto> Connections { get; set; } = new();
     }
 
     public class WorkflowTemplateCreateDto
@@ -54,5 +55,16 @@
         public Guid DocumentTypeId { get; set; }
 
         public List<WorkflowStepCreateDto> Steps { get; set; } = new();
+        public List<WorkflowConnectionDto> Connections { get; set; } = new();
+    }
+    // ============================================
+    // WORKFLOW CONNECTION DTOs
+    // ============================================
+    public class WorkflowConnectionDto
+    {
+        public Guid SourceStepId { get; set; }
+        public Guid TargetStepId { get; set; }
+        public string? Condition { get; set; }
+        public int? Order { get; set; }
     }
 }

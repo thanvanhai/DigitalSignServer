@@ -21,5 +21,7 @@ namespace DigitalSignServer.Models
 
         // Danh sách các bước ký trong quy trình
         public ICollection<WorkflowStep> Steps { get; set; } = new List<WorkflowStep>();
+        public ICollection<WorkflowConnection> Connections { get; set; } = new List<WorkflowConnection>();
+
     }
 }
